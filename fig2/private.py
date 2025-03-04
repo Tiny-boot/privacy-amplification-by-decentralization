@@ -1,7 +1,7 @@
 import data
 from sklearn.linear_model._base import LinearClassifierMixin, SparseCoefMixin, BaseEstimator
-from sklearn.utils.extmath import log_logistic, safe_sparse_dot
-from sklearn.linear_model._logistic import _intercept_dot
+from sklearn.metrics import log_loss
+from sklearn.utils.extmath import safe_sparse_dot
 from scipy.special import expit
 from sklearn.utils.validation import check_X_y
 import numpy as np
@@ -9,6 +9,19 @@ import scipy as sp
 import matplotlib.pyplot as plt
 from numpy import linalg as LA
 
+def _intercept_dot(theta, X, y):
+    """Custom implementation to replace _intercept_dot."""
+    n_samples, n_features = X.shape
+    # Split theta into weights (w) and intercept (b) if intercept exists
+    if theta.shape[0] == n_features + 1:
+        w = theta[:-1]
+        b = theta[-1]
+    else:
+        w = theta
+        b = 0.0
+    # Compute w^T X + b
+    yz = y * (X.dot(w) + b)
+    return w, b, yz
 
 def sgd(X, y, gamma, n_iter, obj_and_grad, theta_init, n_batch=1, freq_obj_eval=10,
         n_obj_eval=1000, random_state=None):
@@ -49,11 +62,11 @@ def sgd(X, y, gamma, n_iter, obj_and_grad, theta_init, n_batch=1, freq_obj_eval=
     accuracy_list : list of length (n_iter / freq_obj_eval)
         A list containing the value of the test accuracy computed every freq_obj_eval iterations
     """
-    
+
     rng = np.random.RandomState(random_state)
     n, d = X.shape
     p = theta_init.shape[0]
-    
+
     theta = theta_init.copy()
 
     # if a constant step size was provided, we turn it into a constant function
@@ -62,7 +75,7 @@ def sgd(X, y, gamma, n_iter, obj_and_grad, theta_init, n_batch=1, freq_obj_eval=
             return gamma
     else:
         gamma_func = gamma
-    
+
     # list to record the evolution of the objective (for plotting)
     obj_list = []
     # we draw a fixed subset of points to monitor the objective
@@ -73,7 +86,7 @@ def sgd(X, y, gamma, n_iter, obj_and_grad, theta_init, n_batch=1, freq_obj_eval=
             # evaluate objective
             obj, _ = obj_and_grad(theta, X[idx_eval, :], y[idx_eval])
             obj_list.append(obj)
-        
+
         idx_batch = rng.randint(0, n, n_batch)
         obj, grad = obj_and_grad(theta, X[idx_batch, :], y[idx_batch])
         theta -= gamma_func(t+1) * grad
@@ -112,7 +125,7 @@ def my_logistic_obj_and_grad(theta, X, y, lamb):
     w, c, yz = _intercept_dot(theta, X, y)
 
     # Logistic loss is the negative of the log of the logistic function
-    obj = -np.mean(log_logistic(yz)) + .5 * lamb * np.dot(w, w)
+    obj = log_loss(y, expit(yz)) + .5 * lamb * np.dot(w, w)
 
     z = expit(yz)
     z0 = (z - 1) * y
@@ -167,7 +180,7 @@ def private_random_walk_sgd(X, y, gamma, n_iter, n_nodes, obj_and_grad, theta_in
         Max number of updates per node authorized due to privay constraint
     random_state : int
         Random seed to make the algorithm deterministic
-    score : callable 
+    score : callable
         Score used to evaluate the model (in practice sklearn score on test set)
     L : float
         Max norm for the gradient (clipped to L)
@@ -185,11 +198,11 @@ def private_random_walk_sgd(X, y, gamma, n_iter, n_nodes, obj_and_grad, theta_in
 
     if score is None:
         score = lambda c: 42
-    
+
     rng = np.random.RandomState(random_state)
     n, d = X.shape
     p = theta_init.shape[0]
-    
+
     theta = theta_init.copy()
 
     # if a constant step size was provided, we turn it into a constant function
@@ -198,12 +211,12 @@ def private_random_walk_sgd(X, y, gamma, n_iter, n_nodes, obj_and_grad, theta_in
             return gamma
     else:
         gamma_func = gamma
-        
-    
+
+
     n_updates = np.zeros(n_nodes)
     noisy = 0
-        
-    
+
+
     # list to record the evolution of the objective (for plotting)
     obj_list = []
     scores = []
@@ -236,7 +249,7 @@ def private_random_walk_sgd(X, y, gamma, n_iter, n_nodes, obj_and_grad, theta_in
             if n_updates[idx_node] > max_updates_per_node:
                 print("iter", t, ": node", idx, "reached the maximum number of", max_updates_per_node, "updates")
                 break
-        
+
         elif stopping_criteria == "contribute_then_noise":
             # the node only adds noise if the maximum number of contributions has been reached (for Network DP)
             n_updates[idx_node] += 1
@@ -245,7 +258,7 @@ def private_random_walk_sgd(X, y, gamma, n_iter, n_nodes, obj_and_grad, theta_in
                 grad = 0
                 # if noisy %200 == 0:
                     # print("iter", t, "there were ", noisy, "updates with only noise")
-        
+
         elif stopping_criteria == "contribute_then_nothing":
             # the node only forwards the token if it already reached ist privacy budget (for Local DP)
             n_updates[idx_node] += 1
@@ -255,7 +268,7 @@ def private_random_walk_sgd(X, y, gamma, n_iter, n_nodes, obj_and_grad, theta_in
                noisy+=1
                # if noisy %200 == 0:
                     # print("iter", t, "there were ", noisy, "updates with nothing")
-               
+
         else:
             print("mistake in stopping criteria")
             break
@@ -266,14 +279,14 @@ def private_random_walk_sgd(X, y, gamma, n_iter, n_nodes, obj_and_grad, theta_in
             u = L*u/LA.norm(u)
         # update model
         theta -= gamma_func(t+1) * (u)
-        
+
         # computing score
         if t % freq_obj_eval == 0:
             scores.append(score(theta))
 
 
     # print("moyenne des normes des gradients", sum_grad/n_iter)
-        
+
     return theta, obj_list, scores
 
 
@@ -281,7 +294,7 @@ class MyPrivateRWSGDLogisticRegression(BaseEstimator, LinearClassifierMixin, Spa
     """Our sklearn estimator for private logistic regression defined as:
     min (1/n) \sum_i log_loss(theta;X[i,:],y[i]) + (lamb / 2) \|w\|^2,
     where theta = [w b]
-    
+
     Parameters
     ----------
     gamma : float | callable
@@ -294,7 +307,7 @@ class MyPrivateRWSGDLogisticRegression(BaseEstimator, LinearClassifierMixin, Spa
     sigma : float
         Standard deviation of the Gaussian noise added to each gradient
     lamb : float
-        The L2 regularization parameter    
+        The L2 regularization parameter
     freq_obj_eval : int
         Specifies the frequency (in number of iterations) at which we compute the objective
     n_obj_eval : int
@@ -305,11 +318,11 @@ class MyPrivateRWSGDLogisticRegression(BaseEstimator, LinearClassifierMixin, Spa
         Max number of updates per node authorized due to privay constraint
     random_state : int
         Random seed to make the algorithm deterministic
-    score : callable 
+    score : callable
         Score used to evaluate the model (in practice sklearn score on test set)
     L : float
         Max norm for the gradient (clipped to L)
-        
+
     Attributes
     ----------
     coef_ : (p,)
@@ -319,7 +332,7 @@ class MyPrivateRWSGDLogisticRegression(BaseEstimator, LinearClassifierMixin, Spa
     obj_list_: list of length (n_iter / freq_obj_eval)
         A list containing the value of the objective function computed every freq_loss_eval iterations
     """
-    
+
     def __init__(self, gamma, n_iter, n_nodes,sigma, lamb=0, freq_obj_eval=10, n_obj_eval=1000, stopping_criteria = "contribute_then_noise", max_updates_per_node = 1, random_state=None, score=lambda c: lambda d: 0, L=1):
         self.gamma = gamma
         self.n_iter = n_iter
@@ -333,15 +346,15 @@ class MyPrivateRWSGDLogisticRegression(BaseEstimator, LinearClassifierMixin, Spa
         self.random_state = random_state
         self.score = score
         self.L = L
-    
+
     def fit(self, X, y):
-        
+
         # check data and convert classes to {-1,1} if needed
         X, y = self._validate_data(X, y, accept_sparse='csr', dtype=[np.float64, np.float32], order="C")
-        self.classes_ = np.unique(y)    
+        self.classes_ = np.unique(y)
         y[y==self.classes_[0]] = -1
         y[y==self.classes_[1]] = 1
-                
+
         n, p = X.shape
         theta_init = np.zeros(p+1) # initialize parameters to zero
         # define the function for value and gradient needed by SGD
@@ -361,13 +374,13 @@ class MyPrivateRWSGDLogisticRegression(BaseEstimator, LinearClassifierMixin, Spa
             score=self.score(np.unique(y)),
             L = self.L
         )
-        
+
         # save the learned model into the appropriate quantities used by sklearn
         self.intercept_ = np.expand_dims(theta[-1], axis=0)
         self.coef_ = np.expand_dims(theta[:-1], axis=0)
-        
+
         # also save list of objective values during optimization for plotting
         self.obj_list_ = obj_list
         self.scores_ = scores
-        
+
         return self
