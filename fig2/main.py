@@ -10,6 +10,9 @@ from pathlib import Path
 import typer
 
 
+
+
+
 app = typer.Typer()
 
 ###############################################################################
@@ -62,8 +65,9 @@ def main(
     def score(y):
         # defining score to be able to evaluate the model on the test set during the training
         def evaluation(theta):
-
-            from sklearn.linear_model._base import LinearClassifierMixin, SparseCoefMixin, BaseEstimator
+            from sklearn.linear_model._base import LinearClassifierMixin, SparseCoefMixin
+            from sklearn.utils.validation import validate_data
+            from sklearn.base import BaseEstimator
             class Truc(BaseEstimator, LinearClassifierMixin):
                 def __init__(self):
                     self.intercept_ = np.expand_dims(theta[-1], axis=0)
@@ -75,7 +79,7 @@ def main(
 
             truc = Truc()
 
-            return truc.score(X_test, y_test) 
+            return truc.score(X_test, y_test)
 
         return evaluation
 
@@ -203,7 +207,6 @@ def main(
             plt.savefig("result/accuracy.pdf",bbox_inches='tight', pad_inches=0)
 
         plt.show()
-
-
 if __name__ == "__main__":
-    typer.run(main)
+    # typer.run(main)  # Replace this line
+    main()  # Directly call main function instead
