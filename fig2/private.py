@@ -102,7 +102,7 @@ def my_logistic_obj_and_grad(theta, X, y, lamb):
 
     Parameters
     ----------
-    theta_init : array, shape (d,) or (d+1,)
+    theta : array, shape (d,) or (d+1,)
         The initial value for the model parameters. When an intercept is used, it corresponds to the last entry
     X : array, shape (n, d)
         The data
@@ -110,7 +110,6 @@ def my_logistic_obj_and_grad(theta, X, y, lamb):
         Binary labels (-1, 1)
     lamb : float
         The L2 regularization parameter
-
 
     Returns
     -------
@@ -124,8 +123,8 @@ def my_logistic_obj_and_grad(theta, X, y, lamb):
 
     w, c, yz = _intercept_dot(theta, X, y)
 
-    # Logistic loss is the negative of the log of the logistic function
-    obj = log_loss(y, expit(yz)) + .5 * lamb * np.dot(w, w)
+    # Logistic loss using -np.logaddexp(0, -x) for numerical stability
+    obj = -np.mean(-np.logaddexp(0, -yz)) + 0.5 * lamb * np.dot(w, w)
 
     z = expit(yz)
     z0 = (z - 1) * y
@@ -136,6 +135,7 @@ def my_logistic_obj_and_grad(theta, X, y, lamb):
     if grad.shape[0] > n_features:
         grad[-1] = z0.sum() / n_samples
     return obj, grad
+
 
 
 def private_random_walk_sgd(X, y, gamma, n_iter, n_nodes, obj_and_grad, theta_init,
